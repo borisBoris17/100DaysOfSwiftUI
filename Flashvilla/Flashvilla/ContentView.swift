@@ -1,0 +1,179 @@
+//
+//  ContentView.swift
+//  Flashvilla
+//
+//  Created by tucker bichsel on 09/08/2023.
+//
+
+import SwiftUI
+
+extension View {
+    func stacked(at position: Int, in total: Int) -> some View {
+        let offset = Double(total - position)
+        return self.offset(x: 0, y: offset * 10)
+    }
+}
+
+struct ContentView: View {
+    @State private var cards = [Card]()
+    @Environment(\.accessibilityDifferentiateWithoutColor) var differentiateWithoutColor
+    @Environment(\.accessibilityVoiceOverEnabled) var voiceOverEnabled
+    
+    @State private var timeRemaining = 100
+    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    
+    @Environment(\.scenePhase) var scenePhase
+    @State private var isActive = true
+    
+    @State private var showingEditScreen = false
+    
+    let saveKey = "SavedCards"
+    let savePath = FileManager.documentsDirectory.appendingPathComponent("SavedCards")
+    
+    var body: some View {
+        ZStack {
+            Image("background")
+                .resizable()
+                .ignoresSafeArea()
+            VStack {
+                Text("Time: \(timeRemaining)")
+                    .font(.largeTitle)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 15)
+                    .background(.black.opacity(0.75))
+                    .clipShape(Capsule())
+                
+                ZStack {
+                    ForEach(cards) { card in
+                        CardView(card: card) { isWrong in
+                            withAnimation {
+                                if isWrong {
+                                    removeCard(at: cards.firstIndex(of: card) ?? 0)
+                                    let redoCard = Card(prompt: card.prompt, answer: card.answer)
+                                    cards.insert(redoCard, at: 0)
+                                } else {
+                                    removeCard(at: cards.firstIndex(of: card) ?? 0)
+                                }
+                            }
+                        }
+                        .stacked(at: cards.firstIndex(of: card) ?? 0, in: cards.count)
+                        .allowsHitTesting(cards.firstIndex(of: card) ?? 0 == cards.count - 1)
+                        .accessibilityHidden(cards.firstIndex(of: card) ?? 0 < cards.count - 1)
+                    }
+                }
+                .allowsHitTesting(timeRemaining > 0)
+                
+                if cards.isEmpty {
+                    VStack {
+                        Button("Start Again", action: resetCards)
+                            .padding()
+                            .background(.white)
+                            .foregroundColor(.black)
+                            .clipShape(Capsule())
+                    }
+                    .padding() 
+                }
+            }
+            
+            VStack {
+                HStack {
+                    Spacer()
+                    
+                    Button {
+                        showingEditScreen = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                            .padding()
+                            .background(.black.opacity(0.75))
+                            .clipShape(Circle())
+                    }
+                }
+                
+                Spacer()
+            }
+            .foregroundColor(.white)
+            .font(.largeTitle)
+            .padding()
+            
+            if differentiateWithoutColor || voiceOverEnabled {
+                VStack {
+                    Spacer()
+                    
+                    HStack {
+                        Button {
+                            withAnimation {
+                                removeCard(at: cards.count - 1)
+                            }
+                        } label : {
+                            Image(systemName: "xmark.circle")
+                                .padding()
+                                .background(.black.opacity(0.7))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Wrong")
+                        .accessibilityHint("Mark your answer as being incorrect")
+                        
+                        Spacer()
+                        
+                        Button {
+                            withAnimation {
+                                removeCard(at: cards.count - 1)
+                            }
+                        } label: {
+                            Image(systemName: "checkmark.circle")
+                                .padding()
+                                .background(.black.opacity(0.7))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Correct")
+                        .accessibilityHint("Mark your answer as being correct")
+                    }
+                    .foregroundColor(.white)
+                    .font(.largeTitle)
+                    .padding()
+                }
+            }
+        }
+        .onReceive(timer) { time in
+            guard isActive else { return }
+            
+            if timeRemaining > 0 {
+                timeRemaining -= 1
+            }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                if cards.isEmpty == false {
+                    isActive = true
+                }
+            } else {
+                isActive = false
+            }
+        }
+        .sheet(isPresented: $showingEditScreen, onDismiss: resetCards, content: EditCards.init)
+        .onAppear(perform: resetCards)
+    }
+    
+    func removeCard(at index: Int) {
+        guard index >= 0 else { return }
+        
+        cards.remove(at: index)
+        
+        if cards.isEmpty {
+            isActive = false
+        }
+    }
+    
+    func resetCards() {
+        timeRemaining = 100
+        isActive = true
+        cards = FileManager.loadCards(savePath: savePath)
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
